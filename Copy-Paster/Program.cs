@@ -1,14 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using WK.Libraries.SharpClipboardNS;
 
 namespace Copy_Paster
 {
     internal static class Program
     {
         [STAThread]
-        static void Main()
+        private static void Main()
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -16,8 +19,6 @@ namespace Copy_Paster
             // Initialize your application class
             CopyPaster copyPaster = new CopyPaster();
 
-            // Hook into the Clipboard's ClipboardChanged event
-            ClipboardMonitor.Start(copyPaster.OnClipboardChanged);
             // Rest of your code remains unchanged
             Application.Run(copyPaster);
         }
@@ -29,9 +30,14 @@ namespace Copy_Paster
             private const int HISTORY_SIZE = 5;
 
             private List<string> clipboardHistory = new List<string>();
+            private SharpClipboard clipboard;
 
             public CopyPaster()
             {
+                // Initialize SharpClipboard
+                clipboard = new SharpClipboard();
+                clipboard.ClipboardChanged += ClipboardChanged;
+
                 // Initialize Tray Icon
                 trayIcon = new NotifyIcon()
                 {
@@ -51,10 +57,32 @@ namespace Copy_Paster
 
                 // Register a global hotkey for copying
                 HotkeyManager.RegisterHotKey(IntPtr.Zero, DISPLAY_TEXT_ID, 0x0003 /*Ctrl+Alt*/, (uint)Keys.C);
-
             }
 
-            void ShowHistoryItem(object sender, EventArgs e)
+            private void ClipboardChanged(object sender, SharpClipboard.ClipboardChangedEventArgs e)
+            {
+                // Handle clipboard changes here
+                if (e.ContentType == SharpClipboard.ContentTypes.Text)
+                {
+                    // Get the cut/copied text.
+                    string clipboardData = clipboard.ClipboardText;
+                    Console.WriteLine("Clipboard Content Changed: " + clipboardData);
+
+                    // Add the new entry to the clipboard history
+                    clipboardHistory.Add(clipboardData);
+
+                    // Remove the oldest entry if the history size exceeds the limit
+                    if (clipboardHistory.Count > HISTORY_SIZE)
+                    {
+                        clipboardHistory.RemoveAt(0);
+                    }
+
+                    // Update the context menu with the latest clipboard history
+                    UpdateContextMenu();
+                }
+            }
+
+            private void ShowHistoryItem(object sender, EventArgs e)
             {
                 // Retrieve the index of the clicked history item
                 int index = trayIcon.ContextMenu.MenuItems.IndexOf((MenuItem)sender);
@@ -63,37 +91,21 @@ namespace Copy_Paster
                 if (index < clipboardHistory.Count)
                 {
                     MessageBox.Show($"History Slot {index + 1}: {clipboardHistory[index]}", "Clipboard History");
+                    Clipboard.SetText(clipboardHistory[index]);
                 }
             }
 
-            void Exit(object sender, EventArgs e)
+            private void Exit(object sender, EventArgs e)
             {
                 // Unregister the hotkey, hide tray icon, and stop monitoring clipboard
                 HotkeyManager.UnregisterHotKey(IntPtr.Zero, DISPLAY_TEXT_ID);
                 trayIcon.Visible = false;
-                ClipboardMonitor.Stop();
+
+                // Dispose of the SharpClipboard instance
+                clipboard.Dispose();
 
                 // Exit the application
                 Application.Exit();
-            }
-
-            public void OnClipboardChanged(object sender, EventArgs e)
-            {
-                // Handle clipboard changes here
-                string clipboardData = Clipboard.GetText();
-                Console.WriteLine("Clipboard Content Changed: " + clipboardData);
-
-                // Add the new entry to the clipboard history
-                clipboardHistory.Add(clipboardData);
-
-                // Remove the oldest entry if the history size exceeds the limit
-                if (clipboardHistory.Count > HISTORY_SIZE)
-                {
-                    clipboardHistory.RemoveAt(0);
-                }
-
-                // Update the context menu with the latest clipboard history
-                UpdateContextMenu();
             }
 
             private void UpdateContextMenu()
@@ -122,80 +134,6 @@ namespace Copy_Paster
 
             [DllImport("user32.dll")]
             public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-        }
-
-        // Helper class to monitor clipboard changes
-        public class ClipboardMonitor
-        {
-            public delegate void ClipboardChangedEventHandler(object sender, EventArgs e);
-            public static event ClipboardChangedEventHandler ClipboardChanged;
-
-            private static IntPtr nextClipboardViewer;
-
-            // Windows messages constants
-            private const int WM_DRAWCLIPBOARD = 0x0308;
-            private const int WM_CHANGECBCHAIN = 0x030D;
-
-            [DllImport("User32.dll")]
-            protected static extern IntPtr SetClipboardViewer(IntPtr hWndNewViewer);
-
-            [DllImport("User32.dll", CharSet = CharSet.Auto)]
-            public static extern bool ChangeClipboardChain(IntPtr hWndRemove, IntPtr hWndNewNext);
-
-            [DllImport("user32.dll", CharSet = CharSet.Auto)]
-            public static extern int SendMessage(IntPtr hwnd, int wMsg, IntPtr wParam, IntPtr lParam);
-
-            public static void Start(ClipboardChangedEventHandler clipboardChangedHandler)
-            {
-                // Register the event handler
-                ClipboardChanged += clipboardChangedHandler;
-
-                // Start monitoring the clipboard
-                nextClipboardViewer = SetClipboardViewer(IntPtr.Zero);
-            }
-
-            public static void Stop()
-            {
-                // Unregister the event handler
-                ClipboardChanged = null;
-
-                // Stop monitoring the clipboard
-                ChangeClipboardChain(nextClipboardViewer, IntPtr.Zero);
-            }
-
-            public static void OnClipboardChanged()
-            {
-                // Invoke the event when the clipboard changes
-                ClipboardChanged?.Invoke(null, EventArgs.Empty);
-            }
-
-            // Handle the WM_DRAWCLIPBOARD message to detect clipboard changes
-            public static IntPtr HandleClipboardMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-            {
-                if (msg == WM_DRAWCLIPBOARD)
-                {
-                    // Clipboard content has changed
-                    OnClipboardChanged();
-                    handled = true;
-                }
-                else if (msg == WM_CHANGECBCHAIN)
-                {
-                    // The clipboard chain is changing
-                    if (wParam == nextClipboardViewer)
-                    {
-                        // If the next viewer in the chain is closing, repair the chain
-                        nextClipboardViewer = lParam;
-                    }
-                    else if (nextClipboardViewer != IntPtr.Zero)
-                    {
-                        // Forward the message to the next viewer in the chain
-                        SendMessage(nextClipboardViewer, msg, wParam, lParam);
-                    }
-                    handled = true;
-                }
-
-                return IntPtr.Zero;
-            }
         }
     }
 }
