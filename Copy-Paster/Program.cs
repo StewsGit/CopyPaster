@@ -31,11 +31,13 @@ namespace Copy_Paster
 
             private List<string> clipboardHistory = new List<string>();
             private SharpClipboard clipboard;
+            private string lastClipboardContent = string.Empty;
 
             public CopyPaster()
             {
                 // Initialize SharpClipboard
                 clipboard = new SharpClipboard();
+                clipboard.ObserveLastEntry = false;
                 clipboard.ClipboardChanged += ClipboardChanged;
 
                 // Initialize Tray Icon
@@ -49,7 +51,7 @@ namespace Copy_Paster
                 // Add menu items for clipboard history
                 for (int i = 0; i < HISTORY_SIZE; i++)
                 {
-                    trayIcon.ContextMenu.MenuItems.Add($"History Slot {i + 1}", ShowHistoryItem);
+                    trayIcon.ContextMenu.MenuItems.Add($"Slot {i + 1}", ShowHistoryItem);
                 }
 
                 // Add "Exit" menu item
@@ -59,6 +61,7 @@ namespace Copy_Paster
                 HotkeyManager.RegisterHotKey(IntPtr.Zero, DISPLAY_TEXT_ID, 0x0003 /*Ctrl+Alt*/, (uint)Keys.C);
             }
 
+
             private void ClipboardChanged(object sender, SharpClipboard.ClipboardChangedEventArgs e)
             {
                 // Handle clipboard changes here
@@ -66,21 +69,30 @@ namespace Copy_Paster
                 {
                     // Get the cut/copied text.
                     string clipboardData = clipboard.ClipboardText;
-                    Console.WriteLine("Clipboard Content Changed: " + clipboardData);
 
-                    // Add the new entry to the clipboard history
-                    clipboardHistory.Add(clipboardData);
-
-                    // Remove the oldest entry if the history size exceeds the limit
-                    if (clipboardHistory.Count > HISTORY_SIZE)
+                    // Check if the clipboard content has changed
+                    if (clipboardData != lastClipboardContent)
                     {
-                        clipboardHistory.RemoveAt(0);
-                    }
+                        Console.WriteLine("Clipboard Content Changed: " + clipboardData);
 
-                    // Update the context menu with the latest clipboard history
-                    UpdateContextMenu();
+                        // Add the new entry to the clipboard history
+                        clipboardHistory.Add(clipboardData);
+
+                        // Remove the oldest entry if the history size exceeds the limit
+                        if (clipboardHistory.Count > HISTORY_SIZE)
+                        {
+                            clipboardHistory.RemoveAt(0);
+                        }
+
+                        // Update the context menu with the latest clipboard history
+                        UpdateContextMenu();
+
+                        // Update the last clipboard content
+                        lastClipboardContent = clipboardData;
+                    }
                 }
             }
+
 
             private void ShowHistoryItem(object sender, EventArgs e)
             {
@@ -90,8 +102,12 @@ namespace Copy_Paster
                 // Display the corresponding history entry
                 if (index < clipboardHistory.Count)
                 {
-                    MessageBox.Show($"History Slot {index + 1}: {clipboardHistory[index]}", "Clipboard History");
+                    MessageBox.Show($"Slot {index + 1}: {clipboardHistory[index]}", "Clipboard History");
+                    clipboard.StopMonitoring();
                     Clipboard.SetText(clipboardHistory[index]);
+                    clipboard = new SharpClipboard();
+                    clipboard.ObserveLastEntry = false;
+                    clipboard.StartMonitoring();
                 }
             }
 
@@ -116,12 +132,12 @@ namespace Copy_Paster
                     if (i < clipboardHistory.Count)
                     {
                         // Update the text of the menu item
-                        trayIcon.ContextMenu.MenuItems[i].Text = $"History Slot {i + 1}: {clipboardHistory[i]}";
+                        trayIcon.ContextMenu.MenuItems[i].Text = $"Slot {i + 1}: {clipboardHistory[i]}";
                     }
                     else
                     {
                         // If no history entry, clear the text
-                        trayIcon.ContextMenu.MenuItems[i].Text = $"History Slot {i + 1}";
+                        trayIcon.ContextMenu.MenuItems[i].Text = $"Slot {i + 1}";
                     }
                 }
             }
