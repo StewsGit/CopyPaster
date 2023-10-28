@@ -33,6 +33,9 @@ namespace Copy_Paster
             private SharpClipboard clipboard;
             private string lastClipboardContent = string.Empty;
 
+            // Set the maximum number of characters to display in each slot
+            int maxCharacters = 25;  // Adjust this value as needed
+
             public CopyPaster()
             {
                 // Initialize SharpClipboard
@@ -126,13 +129,23 @@ namespace Copy_Paster
 
             private void UpdateContextMenu()
             {
+
+
                 // Update the context menu items with clipboard history
                 for (int i = 0; i < HISTORY_SIZE; i++)
                 {
                     if (i < clipboardHistory.Count)
                     {
+                        // Get the text for the current history entry
+                        string entryText = clipboardHistory[i];
+
+                        // Truncate the text if it exceeds the maximum number of characters
+                        string truncatedText = entryText.Length > maxCharacters
+                            ? "..." + entryText.Substring(entryText.Length - maxCharacters)
+                            : entryText;
+
                         // Update the text of the menu item
-                        trayIcon.ContextMenu.MenuItems[i].Text = $"Slot {i + 1}: {clipboardHistory[i]}";
+                        trayIcon.ContextMenu.MenuItems[i].Text = $"Slot {i + 1}: {truncatedText}";
                     }
                     else
                     {
@@ -141,6 +154,7 @@ namespace Copy_Paster
                     }
                 }
             }
+
         }
 
         public class HotkeyManager
